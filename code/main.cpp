@@ -121,104 +121,12 @@ struct Bitmap {
     u32  height;
 };
 
-struct RenderBackBuffer {
-    Bitmap bitmap;
-    BITMAPINFO info;
-};
-static RenderBackBuffer g_backBuffer;
 
-struct Window {
-    HWND handle;
-    HDC deviceContext;
-    u32 width;
-    u32 height;
-};
-static Window g_window;
+static void init();
+static void update(float deltaSeconds);
+static void render();
 
-static void win32_resizeBackBuffer(u32 width, u32 height) {
-    if ((width == 0 || height == 0) ||
-        (width == g_backBuffer.bitmap.width && height == g_backBuffer.bitmap.height)) {
-        return;
-    }
-
-    if (g_backBuffer.bitmap.data) {
-        free(g_backBuffer.bitmap.data);
-    }
-    g_backBuffer.bitmap.width  = width;
-    g_backBuffer.bitmap.height = height;
-    g_backBuffer.info.bmiHeader.biWidth  = width;
-    g_backBuffer.info.bmiHeader.biHeight = -height;
-    g_backBuffer.bitmap.data = (u32*)malloc(sizeof(u32) * width*height);
-}
-
-static void win32_resizeWindow(u32 width, u32 height) {
-    g_window.width  = width;
-    g_window.height = height;
-    win32_resizeBackBuffer(width, height);
-}
-
-static void win32_createBackBuffer(u32 width, u32 height) {
-    g_backBuffer = {};
-    g_backBuffer.info.bmiHeader.biSize = sizeof(g_backBuffer.info.bmiHeader);
-    g_backBuffer.info.bmiHeader.biPlanes = 1;
-    g_backBuffer.info.bmiHeader.biBitCount = 32;
-    g_backBuffer.info.bmiHeader.biCompression = BI_RGB;
-
-    win32_resizeBackBuffer(width, height);
-}
-
-struct PlayerInput {
-    bool left;
-    bool right;
-    bool a;
-    bool d;
-};
-static PlayerInput playerInput;
-
-LRESULT WINAPI
-win32_windowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
-    switch (uMsg) {
-    case WM_KEYDOWN:
-    case WM_KEYUP:
-    case WM_SYSKEYDOWN:
-    case WM_SYSKEYUP: {
-        WORD vkCode = LOWORD(wParam);
-        WORD keyFlags = HIWORD(lParam);
-        bool isPressed = !((keyFlags & KF_UP) == KF_UP);
-        if (vkCode == VK_LEFT) {
-            playerInput.left = isPressed;
-        } else if (vkCode == VK_RIGHT) {
-            playerInput.right = isPressed;
-        } else if (vkCode == 'A') {
-            playerInput.a = isPressed;
-        } else if (vkCode == 'D') {
-            playerInput.d = isPressed;
-        }
-    } break;
-    case WM_SIZE: {
-        u32 width  = LOWORD(lParam);
-        u32 height = HIWORD(lParam);
-        win32_resizeWindow(width, height);
-    } break;
-    case WM_DESTROY: {
-        g_running = false;
-    } break;
-    default:
-        return DefWindowProcW(hWnd, uMsg, wParam, lParam);
-    }
-    return 0;
-}
-
-static void win32_blitToWindow() {
-    HDC deviceContext = GetDC(g_window.handle);
-    StretchDIBits(deviceContext, 
-                  0, 0, g_window.width, g_window.height, 
-                  0, 0, g_backBuffer.bitmap.width, g_backBuffer.bitmap.height,
-                  g_backBuffer.bitmap.data, &g_backBuffer.info, 
-                  DIB_RGB_COLORS, SRCCOPY);
-    ReleaseDC(g_window.handle, deviceContext);
-}
-
+#include "win32_breakout.h"
 
 static void drawSquare(u32 color, Vec2 center, Vec2 halfSize, Bitmap* bitmap) {
     int minX = (int)(center.x - halfSize.x);
@@ -300,25 +208,6 @@ static Ball ball;
 
 static bool startedRound = false;
 
-static void render() {
-
-    { // clear backbuffer to black
-        u32* p = g_backBuffer.bitmap.data;
-        for (int y = 0; y < (int)g_backBuffer.bitmap.height; y++) {
-            for (int x = 0; x < (int)g_backBuffer.bitmap.width; x++) {
-                *p++ = 0xff000000;
-            }
-        }
-    }
-
-    for (int i = 0; i < aliveTiles; i++) {
-        drawSquare(0xffff0000, tiles[i].center, tiles[i].halfExtents, &g_backBuffer.bitmap);
-    }
-
-    drawCircle(0xff00ff00, ball.circle.center, ball.circle.radius, &g_backBuffer.bitmap);
-    drawSquare(0xff00ffff, player.center, player.halfExtents, &g_backBuffer.bitmap);
-}
-
 static void resetPlayer() {
     player = {
         .center      = vec2(540, 600),
@@ -392,7 +281,13 @@ static bool checkCollisionAndResolve(Box* box, Circle* circle, Vec2* hitNormal) 
     return colliding;
 }
 
-static void update(float deltaSeconds) {
+void init() {
+    resetPlayer();
+    resetBall();
+    makeTileGrid();
+}
+
+void update(float deltaSeconds) {
     if (!startedRound) {
         if (playerInput.left || playerInput.right || playerInput.a || playerInput.d) {
             startedRound = true;
@@ -459,75 +354,20 @@ static void update(float deltaSeconds) {
     }
 }
 
-int main() {
-    {
-        const wchar_t wndClassName[] = L"WndClassName";
-        WNDCLASSEXW wndClass = {};
-        wndClass.cbSize        = sizeof(WNDCLASSEXW);
-        wndClass.style         = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
-        wndClass.lpfnWndProc   = win32_windowProc;
-        wndClass.hInstance     = GetModuleHandle(NULL);
-        wndClass.lpszClassName = wndClassName;
-        ATOM wndClassAtom = RegisterClassExW(&wndClass);
-        ASSERT(wndClassAtom != 0);
-
-        const wchar_t title[] = L"Breakout";
-        DWORD style = WS_OVERLAPPEDWINDOW;
-        int width  = WIDTH;
-        int height = HEIGHT;
-        RECT rect = {};
-        rect.right  = width;
-        rect.bottom = height;
-        AdjustWindowRectEx(&rect, style, 0, 0);
-        width  = rect.right - rect.left;
-        height = rect.bottom - rect.top;
-        g_window.handle = CreateWindowExW(0, wndClassName, title, style, 
-                                          CW_USEDEFAULT, CW_USEDEFAULT,
-                                          width, height, NULL, NULL, 
-                                          GetModuleHandle(NULL), NULL);
-        ASSERT(g_window.handle != NULL);
-        g_window.deviceContext = GetWindowDC(g_window.handle);
-        ASSERT(g_window.deviceContext != NULL);
-
-        GetClientRect(g_window.handle, &rect);
-        g_window.width  = rect.right;
-        g_window.height = rect.bottom;
-        win32_createBackBuffer(g_window.width, g_window.height);
-
-        ShowWindow(g_window.handle, SW_SHOWDEFAULT);
-        UpdateWindow(g_window.handle);
-    }
-
-    resetPlayer();
-    resetBall();
-    makeTileGrid();
-
-    i64 frequency;
-    i64 timeStamp;
-    QueryPerformanceFrequency((LARGE_INTEGER*)&frequency);
-    QueryPerformanceCounter((LARGE_INTEGER*)&timeStamp);
-
-    while (g_running) {
-        i64 lastTimeStamp = timeStamp;
-        QueryPerformanceCounter((LARGE_INTEGER*)&timeStamp);
-        float deltaSeconds = (float)(timeStamp - lastTimeStamp) / frequency;
-
-        MSG msg;
-        while (PeekMessageW(&msg, NULL, 0, 0, PM_REMOVE)) {
-            TranslateMessage(&msg);
-            DispatchMessageW(&msg);
-            if (msg.message == WM_QUIT) {
-                g_running = false;
-                break;
+void render() {
+    { // clear backbuffer to black
+        u32* p = g_backBuffer.bitmap.data;
+        for (int y = 0; y < (int)g_backBuffer.bitmap.height; y++) {
+            for (int x = 0; x < (int)g_backBuffer.bitmap.width; x++) {
+                *p++ = 0xff000000;
             }
         }
-
-        update(deltaSeconds);
-        render();
-        win32_blitToWindow();
     }
 
-    free(g_backBuffer.bitmap.data);
+    for (int i = 0; i < aliveTiles; i++) {
+        drawSquare(0xffff0000, tiles[i].center, tiles[i].halfExtents, &g_backBuffer.bitmap);
+    }
 
-    return 0;
+    drawCircle(0xff00ff00, ball.circle.center, ball.circle.radius, &g_backBuffer.bitmap);
+    drawSquare(0xff00ffff, player.center, player.halfExtents, &g_backBuffer.bitmap);
 }
