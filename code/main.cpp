@@ -87,6 +87,12 @@ static Vec2 abs(Vec2 a) {
     return vec2(fabs(a.x), fabs(a.y));
 }
 
+static Vec2 reflect(Vec2 v, Vec2 n) {
+    float d = dot(v, n);
+    Vec2 r = v -2*d * n;
+    return r;
+}
+
 
 #define WIN32_LEAN_AND_MEAN
 #define WIN32_EXTRA_LEAN
@@ -220,15 +226,15 @@ static void drawSquare(u32 color, Vec2 center, Vec2 halfSize, Bitmap* bitmap) {
     int maxX = (int)(center.x + halfSize.x) + 1;
     int maxY = (int)(center.y + halfSize.y) + 1;
 
-    if (minX >= bitmap->width || minY >= bitmap->height ||
+    if (minX >= (int)bitmap->width || minY >= (int)bitmap->height ||
         maxX <= 0 || maxY <= 0) {
         return;
     }
 
     minX = minX >= 0 ? minX : 0;
     minY = minY >= 0 ? minY : 0;
-    maxX = maxX <= bitmap->width  ? maxX : bitmap->width;
-    maxY = maxY <= bitmap->height ? maxY : bitmap->height;
+    maxX = maxX <= (int)bitmap->width  ? maxX : (int)bitmap->width;
+    maxY = maxY <= (int)bitmap->height ? maxY : (int)bitmap->height;
 
     for (int y = minY; y < maxY; y++) {
         u32* p = &bitmap->data[y * bitmap->width + minX];
@@ -244,15 +250,15 @@ static void drawCircle(u32 color, Vec2 center, float radius, Bitmap* bitmap) {
     int maxX = (int)(center.x + radius) + 1;
     int maxY = (int)(center.y + radius) + 1;
 
-    if (minX >= bitmap->width || minY >= bitmap->height ||
+    if (minX >= (int)bitmap->width || minY >= (int)bitmap->height ||
         maxX < 0 || maxY < 0) {
         return;
     }
 
     minX = minX >= 0 ? minX : 0;
     minY = minY >= 0 ? minY : 0;
-    maxX = maxX <= bitmap->width  ? maxX : bitmap->width;
-    maxY = maxY <= bitmap->height ? maxY : bitmap->height;
+    maxX = maxX <= (int)bitmap->width  ? maxX : (int)bitmap->width;
+    maxY = maxY <= (int)bitmap->height ? maxY : (int)bitmap->height;
 
     for (int y = minY; y < maxY; y++) {
         u32* p = &bitmap->data[y * bitmap->width + minX];
@@ -281,6 +287,7 @@ struct Ball {
     Circle circle;
     Vec2   velocity;
     bool   alive;
+    bool   ignoreTiles;
 };
 
 #define MAX_TILES 128
@@ -288,7 +295,7 @@ static Box tiles[MAX_TILES];
 static int aliveTiles = 0;
 
 static Box  player;
-#define BALL_SPEED 300.0f
+#define BALL_SPEED 400.0f
 static Ball ball;
 
 static bool startedRound = false;
@@ -297,8 +304,8 @@ static void render() {
 
     { // clear backbuffer to black
         u32* p = g_backBuffer.bitmap.data;
-        for (int y = 0; y < g_backBuffer.bitmap.height; y++) {
-            for (int x = 0; x < g_backBuffer.bitmap.width; x++) {
+        for (int y = 0; y < (int)g_backBuffer.bitmap.height; y++) {
+            for (int x = 0; x < (int)g_backBuffer.bitmap.width; x++) {
                 *p++ = 0xff000000;
             }
         }
@@ -315,17 +322,18 @@ static void render() {
 static void resetPlayer() {
     player = {
         .center      = vec2(540, 600),
-        .halfExtents = vec2(65, 10),
+        .halfExtents = vec2(70, 5),
     };
 }
 
 static void resetBall() {
     ball = {
         .circle = {
-            .center = vec2(540, 300),
-            .radius = 10,
+            .center = vec2(540, 150),
+            .radius = 8,
         },
         .velocity = vec2(0,0),
+        .ignoreTiles = true,
     };
 }
 
@@ -335,18 +343,19 @@ static void makeTileGrid() {
     aliveTiles = gridWidth * gridHeight;
     ASSERT(aliveTiles <= MAX_TILES);
 
-    float padding           = 20;
+    float verticalPadding   = 40;
+    float horizontalPadding = 20;
     float horizontalSpacing = 5;
     float verticalSpacing   = 5;
     Vec2 halfExtents = vec2(
-        (WIDTH - padding*2 - horizontalSpacing * (gridWidth-1)) / gridWidth * 0.5f,
+        (WIDTH - horizontalPadding*2 - horizontalSpacing * (gridWidth-1)) / gridWidth * 0.5f,
         10.0f
     );
     
     for (int y = 0; y < gridHeight; y++) {
         Vec2 offset = vec2(
-            padding + halfExtents.x,
-            padding + halfExtents.y + y * (halfExtents.y * 2 + verticalSpacing)
+            horizontalPadding + halfExtents.x,
+            verticalPadding + halfExtents.y + y * (halfExtents.y * 2 + verticalSpacing)
         );
         for (int x = 0; x < gridWidth; x++) {
             tiles[y * gridWidth + x] = (Box){
@@ -358,11 +367,29 @@ static void makeTileGrid() {
     }
 }
 
-static bool areColliding(Box* box, Circle* circle) {
-    Vec2 d = circle->center - box->center;
+static bool checkCollisionAndResolve(Box* box, Circle* circle, Vec2* hitNormal) {
+    *hitNormal = vec2(0,0);
+    Vec2 diff = circle->center - box->center;
+    Vec2 d = diff;
     d = abs(d) - vec2(circle->radius);
-    return (d.x <= box->halfExtents.x) &&
-           (d.y <= box->halfExtents.y);
+    bool colliding  = (d.x <= box->halfExtents.x) &&
+                      (d.y <= box->halfExtents.y);
+
+    if (colliding) {
+        Vec2 absDiff = box->halfExtents - abs(diff);
+        Vec2 correction = vec2(0,0);
+        if (absDiff.x <= absDiff.y) {
+            float sign = diff.x >= 0 ? 1 : -1;
+            correction.x = sign * (box->halfExtents.x + circle->radius) - diff.x;
+        } else {
+            float sign = diff.y >= 0 ? 1 : -1;
+            correction.y = sign * (box->halfExtents.y + circle->radius) - diff.y; 
+        }
+        circle->center += correction;
+        *hitNormal = normalize(correction);
+    }
+    
+    return colliding;
 }
 
 static void update(float deltaSeconds) {
@@ -378,10 +405,10 @@ static void update(float deltaSeconds) {
 
     float playerSpeedX = 0;
     if (playerInput.left || playerInput.a) {
-        playerSpeedX -= 300;
+        playerSpeedX -= 350;
     }
     if (playerInput.right || playerInput.d) {
-        playerSpeedX += 300;
+        playerSpeedX += 350;
     }
 
     player.center.x += playerSpeedX * deltaSeconds;
@@ -393,22 +420,27 @@ static void update(float deltaSeconds) {
 
     ball.circle.center += deltaSeconds * ball.velocity;
 
-    // TODO(pedro s.): Correct position on collision
-    if (areColliding(&player, &ball.circle)) {
-        Vec2 dir = (ball.circle.center - player.center);
-        dir.x *= 0.5f;
-        dir = normalize(dir);
-        ball.velocity = BALL_SPEED * dir;
+    Vec2 hitNormal;
+    if (checkCollisionAndResolve(&player, &ball.circle, &hitNormal)) {
+        if (hitNormal.y < 0e-6f) {
+            Vec2 dir = (ball.circle.center - player.center);
+            dir.x *= 0.5f;
+            dir = normalize(dir);
+            ball.velocity = BALL_SPEED * dir;
+        } else {
+            ball.velocity = reflect(ball.velocity, hitNormal);
+        }
+        ball.ignoreTiles = false;
     }
 
-    // TODO(pedro s.): Correct position on collision
-    // TODO(pedro s.): Get collision normals to reflect ball
-    for (int i = 0; i < aliveTiles; i++) {
-        if (areColliding(&tiles[i], &ball.circle)) {
-            aliveTiles--;
-            tiles[i] = tiles[aliveTiles];
-            ball.velocity.y = -ball.velocity.y;
-            break;
+    if (!ball.ignoreTiles) {
+        for (int i = 0; i < aliveTiles; i++) {
+            if (checkCollisionAndResolve(&tiles[i], &ball.circle, &hitNormal)) {
+                aliveTiles--;
+                tiles[i] = tiles[aliveTiles];
+                ball.velocity = reflect(ball.velocity, hitNormal);
+                break;
+            }
         }
     }
 
