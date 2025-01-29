@@ -1,5 +1,12 @@
-#ifndef WIN32_BREAKOUT_H_
-#define WIN32_BREAKOUT_H_
+#ifndef BREAKOUT_WIN32_H_
+#define BREAKOUT_WIN32_H_
+
+#include "audio.h"
+#define WIN32_LEAN_AND_MEAN
+#define WIN32_EXTRA_LEAN
+#include <Windows.h>
+#include <wingdi.h>
+#include <winuser.h>
 
 struct win32_RenderBackBuffer {
     Bitmap bitmap;
@@ -135,6 +142,8 @@ int main() {
         UpdateWindow(g_window.handle);
     }
 
+    audioInit();
+
     init();
 
     i64 frequency;
@@ -164,7 +173,9 @@ int main() {
 
     free(g_backBuffer.bitmap.data);
 
+    audioDeinit();
+
     return 0;
 }
 
-#endif // WIN32_BREAKOUT_H_
+#endif // BREAKOUT_WIN32_H_
