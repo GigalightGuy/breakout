@@ -16,8 +16,7 @@ static u32 bufferFrameCount;
 static u64 bufferDurationInSeconds;
 static WAVEFORMATEX mixFormat;
 
-static constexpr i64 REFTIMES_PER_SEC      = 10000000;
-
+static constexpr i64 REFTIMES_PER_SEC          = 10000000;
 static constexpr i64 REQUESTED_BUFFER_DURATION = 2*REFTIMES_PER_SEC;
 
 void audioInit() {
@@ -66,7 +65,7 @@ void audioInit() {
     ASSERT(SUCCEEDED(hr));
 
     constexpr float   TONE_HZ = 440;
-    constexpr int16_t TONE_VOLUME = 3000;
+    constexpr int16_t PCM_VOLUME_NORMALIZE_FACTOR = 32000;
     double playBackTime = 0.0;
 
     while (true) {
@@ -79,12 +78,17 @@ void audioInit() {
         hr = renderClient->GetBuffer(frameCount, (BYTE**)&buffer);
         ASSERT(SUCCEEDED(hr));
 
+        // db          = 20*log_10(v)
+        // volumeLevel = 10^(db/20)
+        // good db range [-80,0]
+        float db          = -16;
+        float volumeLevel = powf(10.f, db/20.f);
+
         for (u32 frameIndex = 0; frameIndex < frameCount; frameIndex++) {
-            float amplitudeL = sinf(playBackTime * F_TAU*TONE_HZ);
-            //float amplitudeR = sinf(playBackTime * F_TAU*(TONE_HZ + 0.5f*TONE_HZ * sinf(F_TAU * playBackTime)));
-            float amplitudeR = sawtooth(playBackTime, 220);
-            int16_t yL = (int16_t)(0 * amplitudeL);
-            int16_t yR = (int16_t)(TONE_VOLUME * amplitudeR);
+            float amplitudeL = sineWave(playBackTime, TONE_HZ);
+            float amplitudeR = sineWave(playBackTime, TONE_HZ);
+            i16 yL = (i16)(volumeLevel * PCM_VOLUME_NORMALIZE_FACTOR * amplitudeL);
+            i16 yR = (i16)(volumeLevel * PCM_VOLUME_NORMALIZE_FACTOR * amplitudeR);
 
             *buffer++ = yL; // left
             *buffer++ = yR; // right
