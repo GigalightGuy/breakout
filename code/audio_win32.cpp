@@ -61,6 +61,22 @@ void audioInit() {
     bufferDurationInSeconds = (double)REFTIMES_PER_SEC * 
                               bufferFrameCount / mixFormat.nSamplesPerSec;
 
+
+    Arena backing = {};
+    backing.capacity = (usize)16<<20;
+    backing.memory   = (u8*)VirtualAlloc(NULL, backing.capacity, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE);
+    ASSERT(backing.memory != NULL);
+    Arena permanent = {};
+    permanent.capacity = (usize)8<<20;
+    permanent.memory   = (u8*)allocate(&backing, permanent.capacity);
+    ASSERT(permanent.memory != NULL);
+    Arena scratch = {};
+    scratch.capacity = (usize)4<<20;
+    scratch.memory   = (u8*)allocate(&backing, scratch.capacity);
+    ASSERT(scratch.memory != NULL);
+    AudioTrack* woohAudio = readWaveFile(&permanent, &scratch, "data/sounds/wooh.wav");
+
+
     hr = audioClient->Start();
     ASSERT(SUCCEEDED(hr));
 
@@ -68,6 +84,7 @@ void audioInit() {
     constexpr int16_t PCM_VOLUME_NORMALIZE_FACTOR = 32000;
     double playBackTime = 0.0;
 
+    u32 audioTrackFrame = 0;
     while (true) {
         u32 bufferPadding;
         hr = audioClient->GetCurrentPadding(&bufferPadding);
@@ -83,12 +100,25 @@ void audioInit() {
         // good db range [-80,0]
         float db          = -16;
         float volumeLevel = powf(10.f, db/20.f);
+        (void)volumeLevel;
+        (void)TONE_HZ;
+        (void)PCM_VOLUME_NORMALIZE_FACTOR;
+        (void)playBackTime;
 
         for (u32 frameIndex = 0; frameIndex < frameCount; frameIndex++) {
+            #if 0
             float amplitudeL = sineWave(playBackTime, TONE_HZ);
             float amplitudeR = sineWave(playBackTime, TONE_HZ);
             i16 yL = (i16)(volumeLevel * PCM_VOLUME_NORMALIZE_FACTOR * amplitudeL);
             i16 yR = (i16)(volumeLevel * PCM_VOLUME_NORMALIZE_FACTOR * amplitudeR);
+            #endif
+            // assuming wave sample rate is 44100 HZ
+            i16 yL = woohAudio->sampledData[audioTrackFrame++];
+            i16 yR = woohAudio->sampledData[audioTrackFrame++];
+
+            if (audioTrackFrame >= woohAudio->size/2) {
+                audioTrackFrame -= woohAudio->size/2;
+            }
 
             *buffer++ = yL; // left
             *buffer++ = yR; // right

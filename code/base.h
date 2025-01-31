@@ -39,6 +39,39 @@ constexpr float F_TAU = (float)TAU;
 
 #define ASSERT(c) do { if (!(c)) { LOG("%s %d: assertion '%s' failed\n", __FILE__, __LINE__, #c); DEBUGBREAK(); } } while (0)
 
+struct Arena {
+    u8*   memory;
+    usize capacity;
+    usize offset;
+};
+
+#define push(arena, T)             (T*)allocate(arena, sizeof(T), alignof(T))
+#define pushCount(arena, T, count) (T*)allocate(arena, (count)*sizeof(T), alignof(T))
+#define pop(arena, memory)         (T*)deallocate(arena, memory)
+
+static void* allocate(Arena* arena, usize size, usize alignment = 1) {
+    ASSERT(alignment != 0);
+    ASSERT(alignment == 1 || (alignment & 1) == 0);
+    u8* memory = NULL;
+
+    usize alignmentOffset = alignment - ((usize)arena->memory+arena->offset) & (alignment-1);
+    alignmentOffset = alignmentOffset == alignment ? 0 : alignmentOffset;
+    if ((arena->offset + alignmentOffset + size) > arena->capacity) {
+        return NULL;
+    }
+
+    arena->offset += alignmentOffset;
+    memory = arena->memory + arena->offset;
+    arena->offset += size;
+
+    return memory;
+}
+
+static void deallocate(Arena* arena, void* memory) {
+    if (memory >= arena->memory && memory <= arena->memory + arena->offset) {
+        arena->offset = (u8*)memory - arena->memory;
+    }
+}
 
 struct Vec2 {
     float x;
