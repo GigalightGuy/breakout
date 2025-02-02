@@ -61,9 +61,6 @@ struct PlayerInput {
 };
 static PlayerInput playerInput;
 
-static b32 audioTrackIsPlaying    = false;
-static u32 audioTrackCurrentFrame = 0;
-
 LRESULT WINAPI
 win32_windowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     switch (uMsg) {
@@ -83,8 +80,6 @@ win32_windowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
         } else if (vkCode == 'D') {
             playerInput.d = isPressed;
         } else if (vkCode == 'K' && isPressed) {
-            audioTrackIsPlaying    = true;
-            audioTrackCurrentFrame = 0;
         }
     } break;
     case WM_SIZE: {
@@ -172,8 +167,53 @@ int main() {
     AudioTrack* woohAudio = readWaveFile(&audioMem, &tempMem, "data/sounds/wooh.wav");
     (void)woohAudio;
 
+    struct ActiveSound {
+        AudioTrack* track;
+        float       start;
+        float       volume;
+        b32         loop;
+    };
+    constexpr usize MAX_ACTIVE_SOUNDS = 10;
+    ActiveSound activeSounds[MAX_ACTIVE_SOUNDS] = {};
+    u32         activeSoundIndices[MAX_ACTIVE_SOUNDS];
+    u32         activeSoundCount = 0;
+
+    for (u32 i = 0; i < MAX_ACTIVE_SOUNDS; i++) {
+        activeSoundIndices[i] = i;
+    }
+
+    u32 idx;
+    idx = activeSoundIndices[activeSoundCount++];
+    activeSounds[idx] = (ActiveSound){
+        .track  = woohAudio,
+        .start  = 1.0f,
+        .volume = -10,
+        .loop   = false,
+    };
+    idx = activeSoundIndices[activeSoundCount++];
+    activeSounds[idx] = (ActiveSound){
+        .track  = woohAudio,
+        .start  = 1.1f,
+        .volume = -10,
+        .loop   = false,
+    };
+    idx = activeSoundIndices[activeSoundCount++];
+    activeSounds[idx] = (ActiveSound){
+        .track  = woohAudio,
+        .start  = 1.2f,
+        .volume = -10,
+        .loop   = false,
+    };
+    idx = activeSoundIndices[activeSoundCount++];
+    activeSounds[idx] = (ActiveSound){
+        .track  = woohAudio,
+        .start  = 1.3f,
+        .volume = -10,
+        .loop   = false,
+    };
 
     float submitAheadSeconds = 0.066f;
+
 
     gameInit();
 
@@ -201,37 +241,41 @@ int main() {
             }
         }
 
-        #if 1
         if (audioCtx->playBackTime <= currentTime + submitAheadSeconds) {
             audioCtx->submittedFrameCount = 0;
             memset(audioCtx->audioMixToSubmit, 0, 2*2*audioCtx->submitAheadFrameCount);
             if (audioCtx->playBackTime < currentTime) {
                 audioCtx->playBackTime = currentTime;
+                LOG("Audio mix buffer running behind\n");
             }
 
-            if (audioTrackIsPlaying) {
+            for (i64 i = (i64)activeSoundCount - 1; i >= 0; i--) {
+                ActiveSound* sound = &activeSounds[activeSoundIndices[i]];
+                float playBackTime = audioCtx->playBackTime - sound->start;
+                if (playBackTime <= 0) {
+                    continue;
+                }
+                u32   currentFrame = (u32)(playBackTime * sound->track->sampleRate);
+
                 u32 frameCount = audioCtx->submitAheadFrameCount;
-                u32 remainingFramesInTrack = woohAudio->frameCount - audioTrackCurrentFrame;
-                if (frameCount > remainingFramesInTrack) {
-                    frameCount = remainingFramesInTrack;
-                    audioTrackIsPlaying = false;
-                }
-                for (u32 i = 0; i < frameCount; i++) {
-                    audioCtx->audioMixToSubmit[2*i]     = woohAudio->sampledData[2*audioTrackCurrentFrame];
-                    audioCtx->audioMixToSubmit[2*i + 1] = woohAudio->sampledData[2*audioTrackCurrentFrame + 1];
-                    audioTrackCurrentFrame++;
-                }
-            }
+                i64 remainingFramesInTrack = (i64)sound->track->frameCount - currentFrame;
+                if ((i64)frameCount > remainingFramesInTrack) {
+                    if (remainingFramesInTrack < 0) {
+                        frameCount = 0;
+                    } else {
+                        frameCount = remainingFramesInTrack;
+                    }
 
-        }
-        #else
-        if (audioCtx->playBackTime <= currentTime + submitAheadSeconds) {
-            audioCtx->submittedFrameCount = 0;
-            if (audioCtx->playBackTime < currentTime) {
-                audioCtx->playBackTime = currentTime;
+                    activeSoundIndices[i] = activeSoundIndices[--activeSoundCount];
+                }
+                float volumeLevel = dbToAmplitudeMultiplier(sound->volume);
+                for (u32 i = 0; i < frameCount; i++) {
+                    audioCtx->audioMixToSubmit[2*i]     += (i16)(volumeLevel*(float)sound->track->sampledData[2*currentFrame]);
+                    audioCtx->audioMixToSubmit[2*i + 1] += (i16)(volumeLevel*(float)sound->track->sampledData[2*currentFrame + 1]);
+                    currentFrame++;
+                }
             }
         }
-        #endif
         fillAudioBuffer(audioCtx);
 
         gameUpdate(deltaSeconds);
