@@ -11,8 +11,8 @@ struct Bitmap {
     u32  height;
 };
 
-static void init();
-static void update(float deltaSeconds);
+static void gameInit();
+static void gameUpdate(float deltaSeconds);
 static void render();
 
 #include "breakout_win32.h"
@@ -170,13 +170,13 @@ static bool checkCollisionAndResolve(Box* box, Circle* circle, Vec2* hitNormal) 
     return colliding;
 }
 
-void init() {
+void gameInit() {
     resetPlayer();
     resetBall();
     makeTileGrid();
 }
 
-void update(float deltaSeconds) {
+void gameUpdate(float deltaSeconds) {
     if (!startedRound) {
         if (playerInput.left || playerInput.right || playerInput.a || playerInput.d) {
             startedRound = true;

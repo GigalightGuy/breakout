@@ -3,14 +3,24 @@
 
 #include "base.h"
 
-void audioInit();
-void audioDeinit();
+struct AudioContext {
+    float volumeLevel;
+
+    i16*  audioMixToSubmit;
+    usize submittedFrameCount;
+    usize submitAheadFrameCount;
+
+    double playBackTime;
+};
+
+AudioContext* audioInit(Arena* audioMem, Arena* tempMem);
+void audioDeinit(AudioContext* audioCtx);
 
 struct AudioTrack {
     u32  sampleRate;
     u32  channelCount;
     i16* sampledData;
-    u64  size;
+    u64  frameCount;
 };
 
 
@@ -50,6 +60,17 @@ struct WaveDataChunk {
     // 1 padding byte if n is odd
 };
 
+void fillAudioBuffer(AudioContext* audioCtx);
+
+static float dbToAmplitudeMultiplier(float db) {
+    if (db > 10.0f) {
+        db = 10.0f;
+    } else if (db < -60.0f) {
+        db = -60.0f;
+    }
+    return powf(10.f, db/20.f);
+}
+
 #define MAGICWORD(a, b, c, d) ((u32)(a&0xff)|((u32)(b&0xff)<<8)|((u32)(c&0xff)<<16)|((u32)(d&0xff)<<24))
 
 static AudioTrack* readWaveFile(Arena* arena, Arena* scratch, const char* fileName) {
@@ -83,8 +104,9 @@ static AudioTrack* readWaveFile(Arena* arena, Arena* scratch, const char* fileNa
     *track = {};
     track->sampleRate   = fmtChunk->samplesPerSec;
     track->channelCount = fmtChunk->channels;
-    track->sampledData  = (i16*)((u8*)dataChunk+sizeof(WaveDataChunk));
-    track->size         = dataChunk->chunkSize;
+    track->sampledData  = (i16*)((u8*)track+sizeof(AudioTrack));
+    memcpy(track->sampledData, (u8*)dataChunk+sizeof(WaveDataChunk), dataChunk->chunkSize);
+    track->frameCount   = dataChunk->chunkSize / (2*fmtChunk->channels);
 
     fclose(file);
     return track;

@@ -61,6 +61,9 @@ struct PlayerInput {
 };
 static PlayerInput playerInput;
 
+static b32 audioTrackIsPlaying    = false;
+static u32 audioTrackCurrentFrame = 0;
+
 LRESULT WINAPI
 win32_windowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     switch (uMsg) {
@@ -68,8 +71,8 @@ win32_windowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     case WM_KEYUP:
     case WM_SYSKEYDOWN:
     case WM_SYSKEYUP: {
-        WORD vkCode = LOWORD(wParam);
-        WORD keyFlags = HIWORD(lParam);
+        WORD vkCode    = LOWORD(wParam);
+        WORD keyFlags  = HIWORD(lParam);
         bool isPressed = !((keyFlags & KF_UP) == KF_UP);
         if (vkCode == VK_LEFT) {
             playerInput.left = isPressed;
@@ -79,6 +82,9 @@ win32_windowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
             playerInput.a = isPressed;
         } else if (vkCode == 'D') {
             playerInput.d = isPressed;
+        } else if (vkCode == 'K' && isPressed) {
+            audioTrackIsPlaying    = true;
+            audioTrackCurrentFrame = 0;
         }
     } break;
     case WM_SIZE: {
@@ -142,18 +148,47 @@ int main() {
         UpdateWindow(g_window.handle);
     }
 
-    audioInit();
+    Arena backingMem = {};
+    backingMem.capacity = (usize)MB(16);
+    backingMem.memory   = (u8*)VirtualAlloc(NULL, backingMem.capacity, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE);
+    ASSERT(backingMem.memory != NULL);
+    Arena permanentMem = {};
+    permanentMem.capacity = (usize)MB(8);
+    permanentMem.memory   = (u8*)allocate(&backingMem, permanentMem.capacity);
+    ASSERT(permanentMem.memory != NULL);
+    Arena tempMem = {};
+    tempMem.capacity = (usize)MB(4);
+    tempMem.memory   = (u8*)allocate(&backingMem, tempMem.capacity);
+    ASSERT(tempMem.memory != NULL);
 
-    init();
+    Arena audioMem = {};
+    audioMem.capacity = (usize)MB(4);
+    audioMem.memory   = (u8*)allocate(&permanentMem, audioMem.capacity);
+    ASSERT(audioMem.memory != NULL);
 
+    AudioContext* audioCtx = audioInit(&audioMem, &tempMem);
+
+    // TODO(pedro s.): Create tempMem frame and reset it after call
+    AudioTrack* woohAudio = readWaveFile(&audioMem, &tempMem, "data/sounds/wooh.wav");
+    (void)woohAudio;
+
+
+    float submitAheadSeconds = 0.066f;
+
+    gameInit();
+
+    float currentTime = 0;
+    i64 startTimeStamp;
     i64 frequency;
     i64 timeStamp;
     QueryPerformanceFrequency((LARGE_INTEGER*)&frequency);
-    QueryPerformanceCounter((LARGE_INTEGER*)&timeStamp);
+    QueryPerformanceCounter((LARGE_INTEGER*)&startTimeStamp);
+    timeStamp = startTimeStamp;
 
     while (g_running) {
         i64 lastTimeStamp = timeStamp;
         QueryPerformanceCounter((LARGE_INTEGER*)&timeStamp);
+        currentTime = (float)(timeStamp - startTimeStamp) / frequency;
         float deltaSeconds = (float)(timeStamp - lastTimeStamp) / frequency;
 
         MSG msg;
@@ -166,14 +201,47 @@ int main() {
             }
         }
 
-        update(deltaSeconds);
+        #if 1
+        if (audioCtx->playBackTime <= currentTime + submitAheadSeconds) {
+            audioCtx->submittedFrameCount = 0;
+            memset(audioCtx->audioMixToSubmit, 0, 2*2*audioCtx->submitAheadFrameCount);
+            if (audioCtx->playBackTime < currentTime) {
+                audioCtx->playBackTime = currentTime;
+            }
+
+            if (audioTrackIsPlaying) {
+                u32 frameCount = audioCtx->submitAheadFrameCount;
+                u32 remainingFramesInTrack = woohAudio->frameCount - audioTrackCurrentFrame;
+                if (frameCount > remainingFramesInTrack) {
+                    frameCount = remainingFramesInTrack;
+                    audioTrackIsPlaying = false;
+                }
+                for (u32 i = 0; i < frameCount; i++) {
+                    audioCtx->audioMixToSubmit[2*i]     = woohAudio->sampledData[2*audioTrackCurrentFrame];
+                    audioCtx->audioMixToSubmit[2*i + 1] = woohAudio->sampledData[2*audioTrackCurrentFrame + 1];
+                    audioTrackCurrentFrame++;
+                }
+            }
+
+        }
+        #else
+        if (audioCtx->playBackTime <= currentTime + submitAheadSeconds) {
+            audioCtx->submittedFrameCount = 0;
+            if (audioCtx->playBackTime < currentTime) {
+                audioCtx->playBackTime = currentTime;
+            }
+        }
+        #endif
+        fillAudioBuffer(audioCtx);
+
+        gameUpdate(deltaSeconds);
         render();
         win32_blitToWindow();
     }
 
     free(g_backBuffer.bitmap.data);
 
-    audioDeinit();
+    audioDeinit(audioCtx);
 
     return 0;
 }

@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 
 typedef uint8_t  u8;
 typedef uint16_t u16;
@@ -16,6 +17,8 @@ typedef int8_t  i8;
 typedef int16_t i16;
 typedef int32_t i32;
 typedef int64_t i64;
+
+typedef i32 b32;
 
 typedef float  f32;
 typedef double f64;
@@ -28,6 +31,10 @@ constexpr double TAU = 2*PI;
 
 constexpr float F_PI  = (float)PI;
 constexpr float F_TAU = (float)TAU;
+
+#define KB(bytes) ((isize)(bytes) << 10)
+#define MB(bytes) (     KB(bytes) << 10)
+#define GB(bytes) (     MB(bytes) << 10)
 
 #define LOG(...) fprintf(stderr, __VA_ARGS__)
 
