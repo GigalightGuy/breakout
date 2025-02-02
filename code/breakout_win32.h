@@ -171,7 +171,6 @@ int main() {
         AudioTrack* track;
         float       start;
         float       volume;
-        b32         loop;
     };
     constexpr usize MAX_ACTIVE_SOUNDS = 10;
     ActiveSound activeSounds[MAX_ACTIVE_SOUNDS] = {};
@@ -187,32 +186,10 @@ int main() {
     activeSounds[idx] = (ActiveSound){
         .track  = woohAudio,
         .start  = 1.0f,
-        .volume = -10,
-        .loop   = false,
+        .volume = -5,
     };
-    idx = activeSoundIndices[activeSoundCount++];
-    activeSounds[idx] = (ActiveSound){
-        .track  = woohAudio,
-        .start  = 1.1f,
-        .volume = -10,
-        .loop   = false,
-    };
-    idx = activeSoundIndices[activeSoundCount++];
-    activeSounds[idx] = (ActiveSound){
-        .track  = woohAudio,
-        .start  = 1.2f,
-        .volume = -10,
-        .loop   = false,
-    };
-    idx = activeSoundIndices[activeSoundCount++];
-    activeSounds[idx] = (ActiveSound){
-        .track  = woohAudio,
-        .start  = 1.3f,
-        .volume = -10,
-        .loop   = false,
-    };
-
-    float submitAheadSeconds = 0.066f;
+    
+    float submitAheadSeconds = 0.05f;
 
 
     gameInit();
@@ -252,24 +229,24 @@ int main() {
             for (i64 i = (i64)activeSoundCount - 1; i >= 0; i--) {
                 ActiveSound* sound = &activeSounds[activeSoundIndices[i]];
                 float playBackTime = audioCtx->playBackTime - sound->start;
-                if (playBackTime <= 0) {
+
+                i32 currentFrame = (u32)(playBackTime * sound->track->sampleRate);
+                if (currentFrame + audioCtx->submitAheadFrameCount < 0) {
                     continue;
                 }
-                u32   currentFrame = (u32)(playBackTime * sound->track->sampleRate);
+                i32 startIndex = max(0, 0 - currentFrame);
+                currentFrame = max(0, currentFrame);
 
-                u32 frameCount = audioCtx->submitAheadFrameCount;
-                i64 remainingFramesInTrack = (i64)sound->track->frameCount - currentFrame;
-                if ((i64)frameCount > remainingFramesInTrack) {
-                    if (remainingFramesInTrack < 0) {
-                        frameCount = 0;
-                    } else {
-                        frameCount = remainingFramesInTrack;
-                    }
+                i32 frameCount = (i32)audioCtx->submitAheadFrameCount - startIndex;
+                i32 remainingFramesInTrack = (i32)sound->track->frameCount - currentFrame;
+                if (frameCount > remainingFramesInTrack) {
+                    frameCount = max(0, remainingFramesInTrack);
 
                     activeSoundIndices[i] = activeSoundIndices[--activeSoundCount];
                 }
+                i32 endIndex = startIndex + frameCount;
                 float volumeLevel = dbToAmplitudeMultiplier(sound->volume);
-                for (u32 i = 0; i < frameCount; i++) {
+                for (i32 i = startIndex; i < endIndex; i++) {
                     audioCtx->audioMixToSubmit[2*i]     += (i16)(volumeLevel*(float)sound->track->sampledData[2*currentFrame]);
                     audioCtx->audioMixToSubmit[2*i + 1] += (i16)(volumeLevel*(float)sound->track->sampledData[2*currentFrame + 1]);
                     currentFrame++;

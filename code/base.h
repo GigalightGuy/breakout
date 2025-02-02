@@ -32,6 +32,55 @@ constexpr double TAU = 2*PI;
 constexpr float F_PI  = (float)PI;
 constexpr float F_TAU = (float)TAU;
 
+
+static i8 min(i8 a, i8 b) {
+    return a < b ? a : b;
+}
+
+static i16 min(i16 a, i16 b) {
+    return a < b ? a : b;
+}
+
+static i32 min(i32 a, i32 b) {
+    return a < b ? a : b;
+}
+
+static i64 min(i64 a, i64 b) {
+    return a < b ? a : b;
+}
+
+static float min(float a, float b) {
+    return a < b ? a : b;
+}
+
+static double min(double a, double b) {
+    return a < b ? a : b;
+} 
+
+static i8 max(i8 a, i8 b) {
+    return a > b ? a : b;
+}
+
+static i16 max(i16 a, i16 b) {
+    return a > b ? a : b;
+}
+
+static i32 max(i32 a, i32 b) {
+    return a > b ? a : b;
+}
+
+static i64 max(i64 a, i64 b) {
+    return a > b ? a : b;
+}
+
+static float max(float a, float b) {
+    return a > b ? a : b;
+}
+
+static double max(double a, double b) {
+    return a > b ? a : b;
+} 
+
 #define KB(bytes) ((isize)(bytes) << 10)
 #define MB(bytes) (     KB(bytes) << 10)
 #define GB(bytes) (     MB(bytes) << 10)

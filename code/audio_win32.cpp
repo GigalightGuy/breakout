@@ -65,7 +65,7 @@ AudioContext* audioInit(Arena* audioMem, Arena* tempMem) {
 
     AudioContext* audioCtx = push(audioMem, AudioContext);
     audioCtx->submittedFrameCount   = 0;
-    audioCtx->submitAheadFrameCount = (usize)(0.066 * 44100);
+    audioCtx->submitAheadFrameCount = (usize)(0.05 * 44100);
     audioCtx->volumeLevel           = dbToAmplitudeMultiplier(0);
     audioCtx->playBackTime          = 0;
     audioCtx->audioMixToSubmit      = pushCount(audioMem, i16, 2*audioCtx->submitAheadFrameCount);
